@@ -88,6 +88,7 @@ def pipeline(
     random_state: Optional[int] = None,
     metrics: Optional[Sequence[str]] = None,
     device: Device = None,
+    args: Optional[dict] = None,
 ) -> Result:
     """Run the training and evaluation pipeline.
 
@@ -148,39 +149,61 @@ def pipeline(
 
     model = model_resolver.make(model, model_kwargs)
     model = model.to(device)
-
+    # NHWC
+    if args.channels_last:
+        model = model.to(memory_format=torch.channels_last)
+        print("---- Use NHWC model")
     optimizer = optimizer_cls(model.parameters(), **(optimizer_kwargs or {}))
 
-    model.train()
+    if not args.evaluate:
+        print('Start training...')
+        model.train()
 
-    loss = loss_cls(**(loss_kwargs or {}))
+        loss = loss_cls(**(loss_kwargs or {}))
 
-    losses = []
-    train_start_time = time.time()
-    for _epoch in trange(epochs):
-        for batch in train_generator:
-            batch = batch.to(device)
-            optimizer.zero_grad()
-            prediction = model(*model.unpack(batch))
-            loss_value = loss(prediction, batch.labels)
-            losses.append(loss_value.item())
-            loss_value.backward()
-            optimizer.step()
-    train_time = time.time() - train_start_time
+        losses = []
+        train_start_time = time.time()
+        for _epoch in trange(epochs):
+            for batch in train_generator:
+                batch = batch.to(device)
+                optimizer.zero_grad()
+                prediction = model(*model.unpack(batch))
+                loss_value = loss(prediction, batch.labels)
+                losses.append(loss_value.item())
+                loss_value.backward()
+                optimizer.step()
+        train_time = time.time() - train_start_time
 
+    print('Start evaluate...')
     model.eval()
-
+    total_time = 0.0
+    total_sample = 0
     evaluation_start_time = time.time()
     predictions = []
-    for batch in test_generator:
+    for i, batch in enumerate(test_generator):
+        if args.num_iter > 0 and i >= args.num_iter: break
+        elapsed = time.time()
         batch = batch.to(device)
         prediction = model(*model.unpack(batch))
+        if torch.cuda.is_available(): torch.cuda.synchronize()
+        elapsed = time.time() - elapsed
+        if args.profile:
+            args.p.step()
+        print("Iteration: {}, inference time: {} sec.".format(i, elapsed), flush=True)
+        if i >= args.num_warmup:
+            total_time += elapsed
+            total_sample += batch_size
         if isinstance(prediction, collections.abc.Sequence):
             prediction = prediction[0]
-        prediction = prediction.detach().cpu().numpy()
+        prediction = prediction.detach().cpu().float().numpy()
         identifiers = batch.identifiers
         identifiers["prediction"] = prediction
         predictions.append(identifiers)
+
+    throughput = total_sample / total_time
+    latency = total_time / total_sample * 1000
+    print('inference latency: %.3f ms' % latency)
+    print('inference Throughput: %f images/s' % throughput)
     evaluation_time = time.time() - evaluation_start_time
 
     predictions_df = pd.concat(predictions)
@@ -190,13 +213,16 @@ def pipeline(
     else:
         metric_dict = {name: metric_resolver.lookup(name) for name in metrics}
 
-    return Result(
-        model=model,
-        predictions=predictions_df,
-        losses=losses,
-        train_time=train_time,
-        evaluation_time=evaluation_time,
-        metrics={
-            name: func(predictions_df["label"], predictions_df["prediction"]) for name, func in metric_dict.items()
-        },
-    )
+    if not args.evaluate:
+        return Result(
+            model=model,
+            predictions=predictions_df,
+            losses=losses,
+            train_time=train_time,
+            evaluation_time=evaluation_time,
+            metrics={
+                name: func(predictions_df["label"], predictions_df["prediction"]) for name, func in metric_dict.items()
+            },
+        )
+    else:
+        return None
