@@ -180,25 +180,26 @@ def pipeline(
     total_sample = 0
     evaluation_start_time = time.time()
     predictions = []
-    for i, batch in enumerate(test_generator):
-        if args.num_iter > 0 and i >= args.num_iter: break
-        elapsed = time.time()
-        batch = batch.to(device)
-        prediction = model(*model.unpack(batch))
-        if torch.cuda.is_available(): torch.cuda.synchronize()
-        elapsed = time.time() - elapsed
-        if args.profile:
-            args.p.step()
-        print("Iteration: {}, inference time: {} sec.".format(i, elapsed), flush=True)
-        if i >= args.num_warmup:
-            total_time += elapsed
-            total_sample += batch_size
-        if isinstance(prediction, collections.abc.Sequence):
-            prediction = prediction[0]
-        prediction = prediction.detach().cpu().float().numpy()
-        identifiers = batch.identifiers
-        identifiers["prediction"] = prediction
-        predictions.append(identifiers)
+    with torch.no_grad():
+        for i, batch in enumerate(test_generator):
+            if args.num_iter > 0 and i >= args.num_iter: break
+            elapsed = time.time()
+            batch = batch.to(device)
+            prediction = model(*model.unpack(batch))
+            if torch.cuda.is_available(): torch.cuda.synchronize()
+            elapsed = time.time() - elapsed
+            if args.profile:
+                args.p.step()
+            print("Iteration: {}, inference time: {} sec.".format(i, elapsed), flush=True)
+            if i >= args.num_warmup:
+                total_time += elapsed
+                total_sample += batch_size
+            if isinstance(prediction, collections.abc.Sequence):
+                prediction = prediction[0]
+            prediction = prediction.detach().cpu().float().numpy()
+            identifiers = batch.identifiers
+            identifiers["prediction"] = prediction
+            predictions.append(identifiers)
 
     throughput = total_sample / total_time
     latency = total_time / total_sample * 1000
