@@ -9,7 +9,7 @@ function main {
     fetch_device_info
     set_environment
     pip install chemicalx
-    pip install torchdrug==0.1.3.post1
+    pip install torchdrug==0.1.2
     pip install transformers==4.28.1
 
     # if multiple use 'xxx,xxx,xxx'
