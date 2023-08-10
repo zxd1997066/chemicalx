@@ -10,6 +10,7 @@ function main {
     set_environment
     pip install chemicalx
     pip install torchdrug==0.1.3.post1
+    pip install transformers==4.28.1
 
     # if multiple use 'xxx,xxx,xxx'
     model_name_list=($(echo "${model_name}" |sed 's/,/ /g'))
