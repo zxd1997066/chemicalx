@@ -36,7 +36,6 @@ def main():
         context_features=False,
         drug_features=True,
         drug_molecules=True,
-        args=args,
     )
     # results.summarize()
 
