@@ -19,6 +19,8 @@ parser.add_argument('--quantized_engine', type=str, default=None, help='quantize
 parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate')
 parser.add_argument('--ipex', dest='ipex', action='store_true', help='ipex')
 parser.add_argument('--jit', dest='jit', action='store_true', help='jit')
+parser.add_argument("--triton_cpu", action='store_true', default=False,
+                    help="enable triton_cpu")
 args = parser.parse_args()
 print(args)
 
@@ -55,7 +57,10 @@ def trace_handler(p):
 
 
 if __name__ == "__main__":
-
+    if args.triton_cpu:
+        print("run with triton cpu backend")
+        import torch._inductor.config
+        torch._inductor.config.cpu_backend="triton"
     if args.profile:
         with torch.profiler.profile(
             activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
